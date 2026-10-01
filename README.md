@@ -5,10 +5,10 @@ Python interface to [QOBLIB](https://github.com/ZIB-AOPT/QOBLIB), the Quantum Op
 ## Installation
 
 ```
-pip install qoblib
+uv add qoblib
 ```
 
-Requires Python 3.10 or newer; the only dependency is NumPy.
+Requires Python 3.10 or newer; the only dependency is NumPy. The command line tool also runs without installing anything: `uvx qoblib list`.
 
 ## Quickstart
 
@@ -75,7 +75,7 @@ Steiner.download("stp_s003_l1_t2_h0_rs97531", dest="data")   # a single instance
 qoblib.download(dest="data")                # every problem, about 0.8 GB
 ```
 
-With `dest`, files are laid out as in the QOBLIB repository (`data/04-steiner/instances/...`, `data/04-steiner/solutions/...`). The same is available from the shell:
+With `dest`, files are laid out as in the QOBLIB repository (`data/04-steiner/instances/...`, `data/04-steiner/solutions/...`). The same is available from the shell (inside a project that depends on `qoblib` use `uv run qoblib ...`, anywhere else `uvx qoblib ...`):
 
 ```
 qoblib list                       # problems with instance counts and download sizes
@@ -136,9 +136,11 @@ qoblib.set_ref(None)          # back to the bundled commit
 
 ## Maintainer notes
 
-- **Updating the index**: `python tools/build_index.py` rewrites `src/qoblib/index.json` for the current `main` of QOBLIB. The `Update index` workflow does this weekly and opens a pull request when something changed.
-- **Tests**: `pytest` runs offline against the small sample of QOBLIB files in `tests/data`. `pytest -m network` additionally builds every Rust checker and runs it on reference solutions from the live repository; it needs network access and `cargo`.
-- **Releasing**: bump `__version__` in `src/qoblib/__init__.py`, commit, tag `vX.Y.Z` and push the tag. The release workflow publishes to PyPI through trusted publishing (project `qoblib`, owner `ZIB-AOPT`, repository `qoblib-python`, workflow `release.yml`, environment `pypi`).
+The project is managed with [uv](https://docs.astral.sh/uv/); `uv sync` creates the environment from `uv.lock`.
+
+- **Tests**: `uv run pytest` runs offline against the small sample of QOBLIB files in `tests/data`. `uv run pytest -m network` additionally builds every Rust checker and runs it on reference solutions from the live repository; it needs network access and `cargo`.
+- **Updating the index**: `uv run tools/build_index.py` rewrites `src/qoblib/index.json` for the current `main` of QOBLIB. The `Update index` workflow does this weekly and opens a pull request when something changed.
+- **Releasing**: `uv version --bump patch` (or `minor`, `major`), commit, tag `vX.Y.Z` and push the tag. The release workflow runs `uv build` and `uv publish`, which uses PyPI trusted publishing (project `qoblib`, owner `ZIB-AOPT`, repository `qoblib-python`, workflow `release.yml`, environment `pypi`).
 
 ## License and citation
 
