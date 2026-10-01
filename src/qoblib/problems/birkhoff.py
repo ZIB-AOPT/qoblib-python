@@ -11,7 +11,7 @@ from pathlib import Path
 
 import numpy as np
 
-from qoblib._base import BestKnown, Problem
+from qoblib._base import BestKnown, CheckResult, Problem
 from qoblib._download import fetch, open_text
 from qoblib._index import QoblibError, index
 
@@ -96,6 +96,12 @@ class Birkhoff(Problem):
                     solution = self._parse_solution(json.dumps({"1": entry}))
                     return BestKnown(solution, bool(entry.get("optimal")), path)
         return super().best_known
+
+    def check(self, solution, **options) -> CheckResult:
+        # Solution files may hold several matrices; hand only ours to the checker.
+        if isinstance(solution, (str, os.PathLike)):
+            solution = self.read_solution(solution)
+        return super().check(solution, **options)
 
     def _parse_solution(self, text: str) -> tuple[list, np.ndarray]:
         entries = [e for key, e in json.loads(text).items() if not key.startswith("_")]
