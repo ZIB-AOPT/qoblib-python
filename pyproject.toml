@@ -5,12 +5,12 @@ build-backend = "hatchling.build"
 [project]
 name = "qoblib"
 dynamic = ["version"]
-description = "Python interface to QOBLIB, the Quantum Optimization Benchmarking Library: list, download, verify, and cache problem instances, models, and solutions."
+description = "Python interface to QOBLIB, the Quantum Optimization Benchmarking Library: download, load, and check problem instances and solutions."
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = { text = "Apache-2.0" }
 authors = [{ name = "QOBLIB maintainers" }]
-dependencies = ["pooch>=1.8"]
+dependencies = ["numpy"]
 keywords = [
   "optimization",
   "benchmark",
@@ -27,9 +27,10 @@ classifiers = [
 ]
 
 [project.optional-dependencies]
-progress = ["tqdm"]
-scip = ["pyscipopt"]
 test = ["pytest"]
+
+[project.scripts]
+qoblib = "qoblib.cli:main"
 
 [project.urls]
 Homepage = "https://github.com/ZIB-AOPT/QOBLIB"
@@ -44,6 +45,7 @@ packages = ["src/qoblib"]
 
 [tool.pytest.ini_options]
 addopts = "-m 'not network'"
+testpaths = ["tests"]
 markers = [
   "network: tests that download from the live repository",
 ]
