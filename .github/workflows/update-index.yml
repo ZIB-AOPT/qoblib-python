@@ -17,18 +17,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install package and test dependencies
-        run: pip install -e ".[test]"
+      - uses: astral-sh/setup-uv@v6
 
       - name: Rebuild the index
-        run: python tools/build_index.py
+        run: uv run --locked tools/build_index.py
 
       - name: Run all tests against the new index
-        run: pytest && pytest -m network
+        run: uv run --locked pytest && uv run --locked pytest -m network
 
       - uses: peter-evans/create-pull-request@v6
         with:

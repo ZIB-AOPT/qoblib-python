@@ -10,41 +10,21 @@ permissions:
   id-token: write  # required for PyPI trusted publishing (OIDC)
 
 jobs:
-  build:
-    name: Build distribution
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: "3.12"
-
-      - name: Install Hatch
-        run: pip install hatch
-
-      - name: Build wheel and sdist
-        run: hatch build
-
-      - name: Upload distribution artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: dist
-          path: dist/
-
   publish:
-    name: Publish to PyPI
-    needs: build
+    name: Build and publish to PyPI
     runs-on: ubuntu-latest
     environment: pypi  # must match the trusted publisher environment on pypi.org
 
     steps:
-      - name: Download distribution artifacts
-        uses: actions/download-artifact@v4
-        with:
-          name: dist
-          path: dist/
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Check that the tag matches the package version
+        run: test "v$(uv version --short)" = "$GITHUB_REF_NAME"
+
+      - name: Build wheel and sdist
+        run: uv build
 
       - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
+        run: uv publish
