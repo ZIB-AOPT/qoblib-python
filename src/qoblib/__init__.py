@@ -7,10 +7,12 @@ object of such a class is one instance::
 
     MarketSplit.instances()                    # names, works offline
     MarketSplit.download()                     # all instances and solutions
+    MarketSplit.download(dest="data")          # ... into a directory of your choice
     problem = MarketSplit.load("ms_03_050_002")
     problem.check(problem.best_known.solution)
 """
 from qoblib._base import BestKnown, CheckResult, Problem
+from qoblib.cli import download
 from qoblib._download import cache_dir
 from qoblib._index import REPOSITORY, QoblibError, get_ref, set_ref
 from qoblib.problems import (
@@ -48,6 +50,7 @@ __all__ = [
     "Topology",
     "__version__",
     "cache_dir",
+    "download",
     "get_ref",
     "set_ref",
 ]
