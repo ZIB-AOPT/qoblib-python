@@ -13,7 +13,19 @@ object of such a class is one instance::
 from qoblib._base import BestKnown, CheckResult, Problem
 from qoblib._download import cache_dir
 from qoblib._index import REPOSITORY, QoblibError, get_ref, set_ref
-from qoblib.problems import PROBLEMS, MarketSplit
+from qoblib.problems import (
+    PROBLEMS,
+    Birkhoff,
+    IndependentSet,
+    Labs,
+    MarketSplit,
+    Network,
+    Portfolio,
+    Routing,
+    Sports,
+    Steiner,
+    Topology,
+)
 
 __version__ = "0.2.0"
 
@@ -21,10 +33,19 @@ __all__ = [
     "PROBLEMS",
     "REPOSITORY",
     "BestKnown",
+    "Birkhoff",
     "CheckResult",
+    "IndependentSet",
+    "Labs",
     "MarketSplit",
+    "Network",
+    "Portfolio",
     "Problem",
     "QoblibError",
+    "Routing",
+    "Sports",
+    "Steiner",
+    "Topology",
     "__version__",
     "cache_dir",
     "get_ref",
