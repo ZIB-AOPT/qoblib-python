@@ -1,6 +1,6 @@
 # qoblib
 
-Python interface to [QOBLIB](https://github.com/ZIB-AOPT/QOBLIB), the Quantum Optimization Benchmarking Library. List, download, verify, and cache problem instances, models, solutions, and submissions without cloning the repository.
+Python interface to [QOBLIB](https://github.com/ZIB-AOPT/QOBLIB), the Quantum Optimization Benchmarking Library. Download the problem instances and reference solutions, load them as Python objects, and check your own solutions with the official checkers, without cloning the repository.
 
 ## Installation
 
@@ -8,211 +8,138 @@ Python interface to [QOBLIB](https://github.com/ZIB-AOPT/QOBLIB), the Quantum Op
 pip install qoblib
 ```
 
+Requires Python 3.10 or newer; the only dependency is NumPy.
+
 ## Quickstart
 
-```python
-import qoblib
-
-qoblib.problem_classes()
-# ['birkhoff', 'independentset', 'labs', 'marketsplit', 'network',
-#  'portfolio', 'routing', 'sports', 'steiner', 'topology']
-
-qoblib.instances("marketsplit")[:3]
-# ['ms_03_050_002', 'ms_03_100_001', ...]
-
-path = qoblib.fetch("marketsplit", "ms_03_050_002")
-# PosixPath('~/.cache/qoblib/main/01-marketsplit/instances/ms_03_050_002.dat')
-```
-
-Files are downloaded once, verified against their SHA-256 hash from the repository manifest, and cached locally. Repeated calls return the cached copy without touching the network.
-
-## Problem objects and solution checkers
-
-Each problem class can also be accessed through a `Problem` object, which adds parsing and solution verification on top of the generic download layer.
+Every QOBLIB problem is one class, and every object of that class is one instance.
 
 ```python
-ms = qoblib.get_problem("marketsplit")
+from qoblib import MarketSplit
 
-# Same listing / download API, but bound to the problem
-ms.instances()                     # ['ms_03_050_002', ...]
-path = ms.fetch("ms_03_050_002")   # download & cache
+MarketSplit.instances()                  # ['ms_03_050_002', ...]; works offline
 
-# Parse files into structured objects
-inst = ms.load_instance("ms_03_050_002")   # MarketSplitInstance
-sol  = ms.load_solution("ms_03_050_002")   # MarketSplitSolution
+problem = MarketSplit.load("ms_03_050_002")   # downloaded on first use, then cached
+problem.A, problem.b                     # the data, as NumPy arrays
 
-# Verify the solution
-result = ms.check_solution(inst, sol)
-result.feasible     # True / False
-result.objective    # objective value (0.0 when feasible for market split)
-result.violations   # list of human-readable constraint violations
-result.details      # problem-specific supplementary info
-                    # includes 'checker': 'rust', 'exit_code', 'stdout', 'stderr'
+best = problem.best_known                # reference solution shipped with QOBLIB
+best.solution                            # array([1, 0, 0, ...])
+best.optimal                             # True if proven optimal
+
+result = problem.check(best.solution)    # runs the official checker
+result.feasible, result.status, result.objective
 ```
 
-### Solution checker prerequisite
+The ten classes are:
 
-`check_solution` uses the **official Rust checkers** from the main QOBLIB repository as the single source of truth for feasibility. The first call for a given problem class downloads the checker source and compiles it with Cargo; subsequent calls use the cached binary.
+| Class | QOBLIB directory | An instance is | A solution is |
+|---|---|---|---|
+| `MarketSplit` | `01-marketsplit` | matrix `A`, vector `b` | 0/1 vector |
+| `Labs` | `02-labs` | sequence length `n` | ±1 sequence |
+| `Birkhoff` | `03-birkhoff` | doubly stochastic `matrix`, `scale` | `(weights, permutations)` |
+| `Steiner` | `04-steiner` | graph `edges`, `terminals` per net | list of `(u, v, net)` |
+| `Sports` | `05-sports` | ITC2021 tournament (`teams`, `slots`, `root`) | list of `(home, away, slot)` |
+| `Portfolio` | `06-portfolio` | `prices`, `covariances`, `budget`, `risk_aversion` | list of `(period, symbol, long, short)` |
+| `IndependentSet` | `07-independentset` | graph with `n` nodes and `edges` | list of nodes |
+| `Network` | `08-network` | node count `n`, `demand` matrix | `(edges, flows)` |
+| `Routing` | `09-routing` | `coords`, `demands`, `capacity`, `depot` | list of routes |
+| `Topology` | `10-topology` | node count `n`, maximum `degree` | edge list of a graph |
 
-**Cargo must be installed on your system.** If it is not, `check_solution` raises `QoblibError` with a clear message. Install the Rust toolchain once with:
+Solutions are plain Python and NumPy data. Nodes, teams and so on keep the numbering of the QOBLIB files (mostly starting at 1), so everything can be compared with the repository directly. [FORMATS.md](FORMATS.md) describes each problem's data and file formats.
 
-```
-curl https://sh.rustup.rs | sh   # Linux / macOS
-```
+Every class offers the same methods:
 
-or visit [rustup.rs](https://rustup.rs) for Windows and other options. After installation, restart your shell so `cargo` is on `PATH`.
+| | |
+|---|---|
+| `Problem.instances()` | names of all instances |
+| `Problem.download(*names, dest=None, solutions=True)` | download instances and reference solutions |
+| `Problem.load(name)` | one instance as an object |
+| `Problem.from_file(path)` | an instance from your own file |
+| `problem.best_known` | reference solution (`solution`, `optimal`, `path`), or `None` |
+| `problem.check(solution)` | verdict of the official checker |
+| `problem.read_solution(path)`, `problem.write_solution(solution, path)` | solution files in QOBLIB format |
 
-The compiled binaries are cached in `~/.cache/qoblib/checkers/` and are reused across sessions. The cache is keyed by problem slug and git ref, so pinning a ref with `qoblib.set_ref("v1.0")` always uses the checker from that exact version of the repository.
+Three problems have no instance files, so their objects can also be created directly: `Labs(n)`, `Network(n)` and `Topology(n, degree)`.
 
-### LABS — instances defined implicitly
+## Downloading
 
-LABS has no instance files; a problem instance is just the sequence length *n*.
-
-```python
-from qoblib.problems.labs import LABSSolution
-
-labs = qoblib.get_problem("labs")
-
-sol    = LABSSolution(s=[1, -1, -1, 1, -1, 1, 1, -1])
-result = labs.check_solution(8, sol)
-result.feasible             # True
-result.objective            # energy E(s)  (lower is better)
-result.details["merit_factor"]   # F = n² / 2E(s)
-
-# Download QUBO / ILP model files
-labs.models()               # list of formulations
-labs.fetch_all(kind="model", decompress=True)
-```
-
-### Model files
-
-All problem classes that ship LP / ILP model files support `load_model()`:
-
-```python
-# Return a local Path (no solver required)
-path = ms.load_model("ms_03_050_002", formulation="binary_linear")
-
-# Open directly in SCIP / PySCIPOpt (requires pyscipopt)
-m = ms.load_model("ms_03_050_002", backend="pyscipopt")
-
-# Open directly in CPLEX / DOcplex (requires docplex)
-m = ms.load_model("ms_03_050_002", backend="docplex")
-```
-
-### Third-party plugins
-
-Anyone can register a new problem class with `@qoblib.register_problem`:
+`load` fetches what it needs, so downloading up front is optional. To get the files themselves:
 
 ```python
 import qoblib
+from qoblib import Steiner
 
-@qoblib.register_problem
-class MyProblem(qoblib.Problem):
-    slug = "myproblem"           # must match the manifest slug
-    description = "My Problem"
-
-    def load_instance(self, name):
-        path = self.fetch(name, kind="instance")
-        return parse_my_format(path)
-
-    def load_solution(self, name):
-        path = self.fetch(name, kind="solution")
-        return parse_my_solution(path)
-
-    def check_solution(self, instance, solution):
-        violations = []
-        # ... check constraints ...
-        return qoblib.CheckResult(
-            feasible=len(violations) == 0,
-            objective=compute_obj(instance, solution),
-            violations=violations,
-        )
+Steiner.download()                          # all Steiner instances and solutions, into the cache
+Steiner.download(dest="data")               # ... into ./data/04-steiner/ instead
+Steiner.download("stp_s003_l1_t2_h0_rs97531", dest="data")   # a single instance
+qoblib.download(dest="data")                # every problem, about 0.8 GB
 ```
 
-`qoblib.registered_problems()` returns the slugs of all currently registered plugins.
+With `dest`, files are laid out as in the QOBLIB repository (`data/04-steiner/instances/...`, `data/04-steiner/solutions/...`). The same is available from the shell:
 
-## File kinds
+```
+qoblib list                       # problems with instance counts and download sizes
+qoblib list steiner               # instance names
+qoblib download steiner --dest data
+qoblib download all --dest data
+```
 
-Every file has a kind: `instance`, `solution`, `model`, or `submission`.
+Downloads are verified against the hash recorded for each file and cached, by default in `~/.cache/qoblib` on Linux. `qoblib.cache_dir()` returns the location and the environment variable `QOBLIB_CACHE_DIR` changes it. Deleting the cache is always safe.
+
+Only instances and reference solutions are downloaded. The model files (LP and QUBO formulations) and the submissions in the QOBLIB repository are not covered by this package.
+
+## Checking solutions
+
+`check` runs the official checkers from the QOBLIB repository, so the verdict is the same one the benchmark uses. The checkers are written in Rust and are compiled the first time a problem is checked. **This needs the Rust toolchain**; install it once from [rustup.rs](https://rustup.rs):
+
+```
+curl https://sh.rustup.rs | sh
+```
+
+Without `cargo` on the `PATH`, `check` raises a `QoblibError` that says so. Everything else in this package works without Rust.
 
 ```python
-sol = qoblib.fetch("marketsplit", "ms_03_050_002", kind="solution")
+from qoblib import Routing
 
-lp = qoblib.fetch(
-    "marketsplit",
-    "01-marketsplit/models/binary_linear/lp_files/ms_03_050_002.lp.xz",
-    kind="model",
-    decompress=True,
-)
+problem = Routing.load("XSH-n20-k4-01")
+result = problem.check([[15, 2, 18, 1, 8], [10, 11, 7, 9, 6], [17, 4, 5, 19, 3], [20, 12, 13, 14, 16]])
 
-qoblib.files("independentset", kind="instance")
-# full manifest records: path, kind, name, filename, size, sha256
+result.status      # 'VALID', 'SUBOPTIMAL', 'INFEASIBLE' or 'INVALID_FILE'
+result.feasible    # True for VALID and SUBOPTIMAL; bool(result) is the same
+result.objective   # 646, as computed by the checker
+result.output      # everything the checker printed
+
+problem.check("my_solution.sol")        # a solution file works as well
 ```
 
-`fetch` accepts a logical name (`"ms_03_050_002"`), an exact file name (`"ms_03_050_002.dat"`), or a full repository path. When a name matches several files, the file in the canonical directory (`solutions/` for solutions, and so on) is preferred; remaining ambiguity raises an error listing the candidate paths. Models in particular usually exist in several formulations (for example `binary_linear` and `binary_unconstrained` subdirectories), so they are best addressed by full path; `qoblib.files(problem, kind="model")` shows what is available.
+`SUBOPTIMAL` is only reported where the checker knows the optimum (currently LABS up to length 66). `MarketSplit` has no objective. QOBLIB ships no checker for `Sports`; its `check` raises a `QoblibError`.
 
-`decompress=True` transparently decompresses `.gz`, `.xz`, `.bz2`, and `.lzma` files and returns the path of the decompressed copy. Note that some problem classes, for example LABS, have no instance files at all because instances are defined implicitly; their `models/` directory is the downloadable artifact.
+From the shell: `qoblib check routing XSH-n20-k4-01 my_solution.sol` prints the checker output and exits with 0 if the solution is feasible.
 
-`fetch_all(problem, kind=...)` downloads a whole category — `kind` is required. Check the total size first if bandwidth matters:
+## Problem-specific notes
+
+- **Labs**: `Labs(n)` works for any `n`; `Labs.instances()` lists the lengths that have a reference solution.
+- **Birkhoff**: QOBLIB stores ten matrices per file. Each matrix is one instance here, named by its id, for example `Birkhoff.load("B3_9_1")`.
+- **Portfolio**: `Portfolio.instances()` lists the market data sets. A benchmark instance adds a budget and a risk aversion: `Portfolio.load("po_a010_t10_orig", budget=4, risk_aversion="1e-4")`, or equivalently `Portfolio.load("po_a010_t10_orig_b004_l1e-4")`. Without a budget, QOBLIB's default for the number of assets is used. `check` and `best_known` need both values.
+- **Network**: `Network(n)` uses the first `n` nodes of the single demand matrix QOBLIB ships (up to 24).
+- **Topology**: the objective is the diameter. `problem.check(edges, max_diameter=3)` additionally rejects graphs with a larger diameter. `problem.bounds` gives the diameter bounds QOBLIB lists for small instances.
+- **Sports**: `root` is the parsed ITC2021 XML document, which holds the constraints.
+
+## Which version of QOBLIB
+
+The package ships an index of the QOBLIB repository at one commit, so results are reproducible and listing works offline. `qoblib.get_ref()` returns that commit. To use a different state of the repository:
 
 ```python
-sum(f["size"] for f in qoblib.files("steiner", kind=qoblib.Kind.INSTANCE))
+qoblib.set_ref("main")        # branch, tag or commit; queries GitHub once
+qoblib.set_ref(None)          # back to the bundled commit
 ```
-
-For a progress bar, install `pip install qoblib[progress]` and pass `progressbar=True`.
-
-## Pinning a version
-
-By default files come from the `main` branch. For reproducible experiments, pin a tag or commit:
-
-```python
-qoblib.set_ref("v1.0")          # tag, branch, or commit SHA
-qoblib.get_ref()
-```
-
-The pin applies to the manifest and to every file downloaded afterwards, and the cache keeps versions separate. Individual calls also accept `ref="..."`. The environment variable `QOBLIB_REF` sets the initial value.
-
-## Cache
-
-The cache lives in an OS-appropriate location (for example `~/.cache/qoblib` on Linux). `qoblib.cache_dir()` returns it, and `QOBLIB_CACHE_DIR` overrides it. Deleting the directory is always safe; files are re-downloaded on demand.
-
-## Custom manifest (development)
-
-To work against a locally generated manifest, for example while preparing changes to the main repository:
-
-```python
-qoblib.set_manifest_source("path/to/manifest.json")   # or a URL, or None to reset
-```
-
-The environment variable `QOBLIB_MANIFEST` does the same. Generate a manifest with `misc/ci/generate_manifest.py` from the main repository.
-
-## File kinds
-
-Use `qoblib.Kind` constants instead of bare strings to get IDE completion:
-
-```python
-qoblib.fetch("marketsplit", "ms_03_050_002", kind=qoblib.Kind.INSTANCE)
-qoblib.files("marketsplit", kind=qoblib.Kind.SOLUTION)
-ms.fetch_all(kind=qoblib.Kind.MODEL)
-```
-
-The plain string forms (`"instance"`, `"solution"`, `"model"`, `"submission"`) continue to work.
-
-## File formats
-
-Instance, solution, and model file formats for all 10 problem classes are
-documented in [FORMATS.md](FORMATS.md).
-
-## How it works
-
-The main repository publishes a `manifest.json` at its root, regenerated by CI whenever data changes. It lists every data file with its size and SHA-256 hash. This package reads that manifest at the pinned ref and downloads files from `raw.githubusercontent.com`, so the manifest and the files always describe the same snapshot. The manifest format is language-agnostic; clients in other languages can consume the same file.
 
 ## Maintainer notes
 
-Releasing: bump `__version__` in `src/qoblib/__init__.py`, commit, tag `vX.Y.Z`, and push the tag. The release workflow builds the distribution and publishes to PyPI via trusted publishing (OIDC); no API tokens are involved. The PyPI trusted publisher must be configured as: project `qoblib`, owner `ZIB-AOPT`, repository `qoblib-python`, workflow `release.yml`, environment `pypi`.
-
-This package requires `manifest.json` to exist in the main repository, generated by `misc/ci/generate_manifest.py` via the `Update manifest` workflow there.
+- **Updating the index**: `python tools/build_index.py` rewrites `src/qoblib/index.json` for the current `main` of QOBLIB. The `Update index` workflow does this weekly and opens a pull request when something changed.
+- **Tests**: `pytest` runs offline against the small sample of QOBLIB files in `tests/data`. `pytest -m network` additionally builds every Rust checker and runs it on reference solutions from the live repository; it needs network access and `cargo`.
+- **Releasing**: bump `__version__` in `src/qoblib/__init__.py`, commit, tag `vX.Y.Z` and push the tag. The release workflow publishes to PyPI through trusted publishing (project `qoblib`, owner `ZIB-AOPT`, repository `qoblib-python`, workflow `release.yml`, environment `pypi`).
 
 ## License and citation
 
-This package is licensed under Apache-2.0. The QOBLIB instance data is licensed separately (CC BY 4.0, see `LICENSE.data` in the main repository). If you use QOBLIB in academic work, please cite it as described in the [main repository](https://github.com/ZIB-AOPT/QOBLIB).
+This package is licensed under Apache-2.0. The QOBLIB data, including the sample in `tests/data`, is licensed separately under CC BY 4.0 (see `LICENSE.data` in the main repository). If you use QOBLIB in academic work, please cite it as described in the [main repository](https://github.com/ZIB-AOPT/QOBLIB).

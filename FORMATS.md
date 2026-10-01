@@ -1,470 +1,101 @@
-# QOBLIB file formats
+# Data and file formats
 
-This document describes the instance and solution file formats for each
-problem class in QOBLIB.  It is the reference for anyone writing a solver,
-preparing a submission, or implementing a new plugin for this library.
+For each QOBLIB problem this document lists what the Python object holds, what a solution looks like in Python, and the file formats behind them in the [QOBLIB repository](https://github.com/ZIB-AOPT/QOBLIB). `read_solution` and `write_solution` convert between the two; `check` accepts either.
 
-Each section covers:
+Numbering follows the files: nodes, customers and matrix columns start at 1 unless stated otherwise. Reference solution files are named `<instance>.opt.<ext>` when proven optimal and `<instance>.bst.<ext>` when best known.
 
-- **Problem** — what is being optimised.
-- **Objective** — what `result.objective` contains after `check_solution`.
-- **Instance format** — the files under `NN-problem/instances/`.
-- **Solution format** — the files under `NN-problem/solutions/`.
-- **Checker CLI** — how the official Rust binary is invoked.
-- **Python types** — the dataclasses returned by `load_instance` / `load_solution`.
+## MarketSplit (`01-marketsplit`)
 
----
+Find `x ∈ {0,1}^n` with `A x = b`. Feasibility problem without objective.
 
-## 01 — Market Split (`marketsplit`)
+- **Object**: `A` (m × n integer array), `b` (length m).
+- **Solution**: sequence of n zeros and ones.
+- **Instance file** `instances/<name>.dat`: a line `m n`, then m lines with n weights followed by the right-hand side. `#` starts a comment.
+- **Solution file**: the 0/1 values, separated by spaces. The checker also accepts a compact 0/1 string, a list of the indices set to 1, and solver output with `x#<index> <value>` lines; `read_solution` reads all of these.
 
-**Problem.** Given an integer matrix *A* (n_rows × n_cols) and a right-hand
-side vector *b*, find a binary vector *x* ∈ {0,1}^n_cols such that `A x = b`.
-Pure feasibility — there is no objective to minimise.
+## Labs (`02-labs`)
 
-**Objective.** `0.0` when feasible.
+Find a sequence `s ∈ {−1,+1}^n` minimising the energy `E(s) = Σ_k C_k(s)²`, with `C_k(s) = Σ_i s_i s_{i+k}`.
 
-### Instance format — `.dat`
+- **Object**: `n`. There are no instance files.
+- **Solution**: sequence of n values +1 and −1.
+- **Solution file**: one character per line, `0` for +1 and `1` for −1. A Python sequence of zeros and ones is written in this encoding unchanged.
+- **Objective**: the energy. The checker knows the optimum for n ≤ 66 and reports `SUBOPTIMAL` for feasible sequences above it.
 
-```
-# optional comment lines starting with #
-<n_rows> <n_cols>
-w1 w2 ... w_{n_cols} rhs
-w1 w2 ... w_{n_cols} rhs
-...
-```
+## Birkhoff (`03-birkhoff`)
 
-- One header line: number of constraint rows, number of variables.
-- One data line per row: `n_cols` integer weights followed by the integer RHS.
-- Commas are treated as whitespace.
-- The RHS on each row equals `sum(weights) / 2`.
+Write a scaled doubly stochastic matrix as a weighted sum of as few permutation matrices as possible.
 
-### Solution format — `.sol`
+- **Object**: `matrix` (n × n integer array whose rows and columns sum to `scale`), `scale`.
+- **Solution**: `(weights, permutations)`. `weights` has length k and sums to `scale`; `permutations` is a k × n array in which row i gives, for each matrix row, the column of permutation i.
+- **Instance file** `instances/qbench_<n>_<sparse|dense>.json`: a JSON object with ten entries, each with `id`, `n`, `scale` and `scaled_doubly_stochastic_matrix` (n² integers, row by row). An instance name is the `id`, `B<n>_<k>_<i>`, where k is the number of permutations the matrix was generated from (n for sparse, n² for dense files).
+- **Solution file**: the same JSON layout, each entry with `id`, `weights` and `permutations` (the k × n values in one list). Reference solutions are the curated collections `solutions/qbench_*.json` where they exist, otherwise `solutions/<id>.bst.json`.
+- **Objective**: number of permutations with non-zero weight. The reconstruction must be exact.
 
-A compact binary string of length `n_cols`, one character per variable:
+## Steiner (`04-steiner`)
 
-```
-01001101...
-```
+Connect each group of terminals ("net") by a tree so that no two trees share a node, minimising the total edge cost.
 
-`0` means variable is 0, `1` means variable is 1.  The Rust checker also
-accepts whitespace/comma-separated integers and `x#N value` (MIP solver output).
+- **Object**: `n_nodes`, `edges` (`{(u, v): cost}` with u < v), `terminals` (`{net: [nodes]}`), `roots` (`{net: node}`), `path` (the instance directory).
+- **Solution**: list of `(u, v, net)`, one per edge used by the tree of `net`.
+- **Instance directory** `instances/<name>/`: `arcs.dat` with lines `node1 node2 cost` (each edge is listed in both directions), `terms.dat` with lines `node net`, `param.dat` with `nodes <count>` and `nets <count>`, `roots.dat` with lines `node net`.
+- **Solution file**: lines `node1 node2 net`.
+- **Objective**: total cost of the selected edges.
 
-### Checker CLI
+## Sports (`05-sports`)
 
-```
-check_marketsplit <instance.dat> <solution.sol>
-```
+Time-constrained double round-robin scheduling in the [ITC2021 format](https://www.sportscheduling.ugent.be/ITC2021/).
 
-### Python types
+- **Object**: `teams` and `slots` (names; the position is the id, starting at 0), `root` (the parsed `<Instance>` element with all constraints).
+- **Solution**: list of `(home, away, slot)`.
+- **Instance file** `instances/<group>/<name>.xml.gz`, **solution file** `solutions/<group>/<name>.xml.gz` with one `<ScheduledMatch home= away= slot=/>` per game. A `<name>.opt.sol` next to a schedule marks it as optimal.
+- **Checker**: none in QOBLIB.
 
-`MarketSplitInstance(n_rows, n_cols, A, b, name, path)`
-`MarketSplitSolution(x, name, path)`
+## Portfolio (`06-portfolio`)
 
----
+Trade assets over several periods, balancing risk, return and transaction costs under a budget.
 
-## 02 — LABS (`labs`)
+- **Object**: `symbols`, `prices` (days × assets), `covariances` (days × assets × assets), `budget`, `risk_aversion` (the weight λ, as a decimal string), `path` (the data directory).
+- **Solution**: list of `(period, symbol, long, short)` with the units held long and short; positions not listed are zero.
+- **Instance directory** `instances/<name>/`: `stock_prices.txt.gz` with lines `day symbol price` and `covariance_matrices.txt.gz` with lines `day symbol symbol value`. The benchmark instances combine each data set with a budget and a λ; `instances/manifest.json` lists the grid.
+- **Solution file** `solutions/<name>/<name>_b<budget>_l<lambda>.<opt|bst>.sol`: optional header lines `instance`, `budget`, `lambda`, `objective`, then lines `period symbol long short`. Files written by this package contain only the position lines; budget and λ are passed to the checker from the object.
+- **Objective**: the integer value computed by the checker (smaller is better). A file that claims a different `objective` in its header is reported as `INVALID_FILE`.
 
-**Problem.** Find a binary sequence *s* ∈ {−1,+1}^n that minimises the
-energy `E(s) = Σ_{k=1}^{n−1} C_k(s)²`, where `C_k(s) = Σ_{i=1}^{n−k} s_i · s_{i+k}`.
-The merit factor is `F = n² / (2 E(s))`.
+## IndependentSet (`07-independentset`)
 
-**Objective.** Energy `E(s)` (lower is better).
+Find a largest set of pairwise non-adjacent nodes.
 
-### Instance format
+- **Object**: `n`, `edges` (m × 2 integer array).
+- **Solution**: collection of node numbers.
+- **Instance file** `instances/<name>.gph`: DIMACS format with a line `p edge <nodes> <edges>` and lines `e <node1> <node2>`; lines starting with `c` are comments.
+- **Solution file**: one node number per line; `#` starts a comment.
+- **Objective**: size of the set.
 
-LABS has **no instance files**.  An instance is fully defined by the sequence
-length *n* (a positive integer).  The downloadable artifacts are model files
-(QUBO / ILP formulations) under `02-labs/models/`.
+## Network (`08-network`)
 
-### Solution format — `.sol`
+Choose a directed network on n nodes in which every node has exactly two incoming and two outgoing edges, and route all demands so that the largest total flow on an edge is minimal.
 
-A compact binary string of length *n*:
+- **Object**: `n`, `demand` (n × n array; entry `[i-1, j-1]` is the demand from i to j). All sizes use the top-left part of one 24-node matrix, `instances/demand.txt`.
+- **Solution**: `(edges, flows)`: the list of edges `(i, j)` and `{(k, i, j): flow}`, the flow on edge (i, j) that originates at node k. Flows are integers, 1000 times the unit of `demand`.
+- **Solution file** `solutions/network<n>.<opt|bst>.sol`: solver output with lines `x#<i>#<j> <0|1>` and `f#<k>#<i>#<j> <flow>`, plus `z <objective>`; `#` at the start of a line is a comment.
+- **Objective**: the largest total flow on an edge, as recomputed by the checker.
 
-```
-01101001...
-```
+## Routing (`09-routing`)
 
-`0` encodes −1, `1` encodes +1.  The Rust checker applies this mapping
-internally.
+Capacitated vehicle routing with one depot.
 
-### Checker CLI
+- **Object**: `capacity`, `coords` (dimension × 2), `demands`, `depot`.
+- **Solution**: list of routes, each the list of customers one vehicle visits in order, without the depot.
+- **Instance file** `instances/<name>.vrp`: TSPLIB/CVRPLIB format with `DIMENSION`, `CAPACITY`, `NODE_COORD_SECTION`, `DEMAND_SECTION` and `DEPOT_SECTION`.
+- **Solution file**: lines `Route #<k>: <customers>` and optionally `Cost <total>`.
+- **Objective**: total distance, with Euclidean distances rounded to the nearest integer.
 
-```
-check_labs <n> <solution.sol>
-```
+## Topology (`10-topology`)
 
-### Python types
+Find a graph with n nodes and maximum degree d whose diameter is as small as possible.
 
-Instance: plain `int` (the sequence length *n*).
-`LABSSolution(s, name)` — `s` may use {−1, +1} or {0, 1} encoding.
-
----
-
-## 03 — Birkhoff Decomposition (`birkhoff`)
-
-**Problem.** Given a doubly stochastic matrix *D*, find the minimum number of
-permutation matrices *P_i* and weights *λ_i* ≥ 0 such that
-`D = Σ λ_i P_i` with `Σ λ_i = 1`.
-
-**Objective.** Total number of permutation matrices used across all
-sub-instances in the file.
-
-### Instance format — `.json`
-
-A single JSON object.  Keys starting with `_` (e.g. `_license`) are metadata
-and ignored.  Each remaining key is an instance ID mapping to:
-
-```json
-{
-  "id": "B5_dense_001",
-  "n": 5,
-  "scale": 1000,
-  "scaled_doubly_stochastic_matrix": [500, 100, ...]
-}
-```
-
-`scaled_doubly_stochastic_matrix` is the matrix entries listed row-by-row,
-scaled by `scale` so all values are integers.
-
-### Solution format — `.json`
-
-Same top-level structure.  Each instance ID maps to:
-
-```json
-{
-  "id": "B5_dense_001",
-  "permutations": [2, 1, 4, 3, 5,   1, 2, 3, 4, 5],
-  "weights": [300.0, 700.0]
-}
-```
-
-`permutations` is a flat array of `k × n` 1-based column indices (k
-permutations concatenated).  `weights` has length k.  `sum(weights)` must
-equal `scale`.
-
-### Checker CLI
-
-```
-check_birkhoff <instance.json> <solution.json>
-```
-
-### Python types
-
-`BirkhoffInstance(instances, name, path)`
-`BirkhoffSolution(solutions, name, path)`
-
----
-
-## 04 — Node-Disjoint Steiner Trees (`steiner`)
-
-**Problem.** Given an undirected weighted graph and several groups of
-terminal nodes, find a minimum-cost set of node-disjoint Steiner trees, one
-per group, each spanning all terminals in its group.
-
-**Objective.** Total weight of all selected edges.
-
-### Instance format — directory
-
-Each instance is a subdirectory (e.g. `stp_s003_l1_t2_h0_rs97531/`)
-containing two files:
-
-**`arcs.dat`** — edge list:
-```
-# optional comments
-node1 node2 weight
-node1 node2 weight
-...
-```
-
-**`terms.dat`** — terminal assignments:
-```
-node_id  network_id
-node_id  network_id
-...
-```
-
-Each `network_id` identifies one Steiner tree group.  A node may appear in
-at most one network (node-disjointness constraint).
-
-### Solution format — `.sol`
-
-One selected edge per line:
-```
-node1 node2 network_id
-node1 node2 network_id
-...
-```
-
-### Checker CLI
-
-```
-check_steiner --arcs <arcs.dat> --terms <terms.dat> --sol <solution.sol>
-```
-
-### Python types
-
-`SteinerInstance(edges, terminals, name, arcs_path, terms_path)`
-`SteinerSolution(edges, name, path)`
-
----
-
-## 05 — Sports Scheduling (`sports`)
-
-**Problem.** Construct a double round-robin tournament schedule satisfying
-hard and soft constraints (home/away balance, break minimisation, pattern
-constraints), following the ITC2021 benchmark format.
-
-**Objective.** Problem-specific penalty (ITC2021 cost function).
-
-### Instance / solution format
-
-ITC2021 XML format.  See the
-[ITC2021 specification](https://sintef.github.io/sport-scheduling-problem-format/)
-for the full schema.
-
-### Checker
-
-No official Rust checker is currently available in the QOBLIB repository.
-`check_solution` raises `QoblibError` until one is added.
-
----
-
-## 06 — Portfolio Optimization (`portfolio`)
-
-**Problem.** Multi-period binary portfolio optimisation: given stock prices
-and a covariance matrix, choose long/short positions to maximise risk-adjusted
-return subject to a budget constraint.
-
-**Objective.** Claimed objective value from the solution file header (exact
-value verified by the Rust checker using rational arithmetic).
-
-### Instance format — directory
-
-Each instance is a subdirectory (e.g. `po_a010_t10_orig/`) containing:
-
-- `stock_prices_*.csv.gz` — time-series of closing prices
-- `covariance_matrices_*.csv.gz` — covariance matrices per period
-
-The Rust checker reads these files directly; the Python library surfaces only
-the directory path.
-
-### Solution format — `.sol`
-
-Plain text with a key-value header followed by position lines:
-
-```
-instance po_a010_t10_orig
-budget 4
-lambda 0.0001
-objective -69482
-# period  symbol  long  short
-0 AAPL  0 1
-1 META  1 0
-```
-
-- `budget` — integer budget *B*.
-- `lambda` — risk weight λ.
-- `objective` — claimed objective (integer).
-- Position lines: `period symbol long_units short_units`.
-
-### Checker CLI
-
-```
-check_portfolio <instance-dir> <solution.sol>
-```
-
-### Python types
-
-`PortfolioInstance(instance_dir, name)`
-`PortfolioSolution(instance_name, budget, lambda_, objective, positions, name, path)`
-
----
-
-## 07 — Maximum Stable Set (`independentset`)
-
-**Problem.** Find a maximum stable set (independent set) in an undirected
-graph: a subset of vertices such that no two are adjacent.
-
-**Objective.** Size of the stable set (number of selected vertices).
-
-### Instance format — `.gph` (DIMACS, plain or gzip)
-
-```
-c optional comment
-p edge <node_count> <edge_count>
-e <node1> <node2>
-e <node1> <node2>
-...
-```
-
-Nodes are 1-based.  Files may be gzip-compressed (`.gph.gz`).
-
-### Solution format
-
-Either a compact binary string of length `node_count`:
-
-```
-0110100...
-```
-
-(`1` = node selected, `0` = not selected, 1-based left-to-right), or a
-newline-separated list of 1-based selected node indices:
-
-```
-2
-3
-5
-```
-
-### Checker CLI
-
-```
-check_stableset <instance.gph> <solution.sol>
-```
-
-### Python types
-
-`StableSetInstance(n, edges, name, path)`
-`StableSetSolution(selected, name, path)`
-
----
-
-## 08 — Network Design (`network`)
-
-**Problem.** Design a directed network on *n* nodes (n ∈ {5, …, 24}) where
-every node has exactly two in-edges and two out-edges.  Route a given demand
-matrix through the network, minimising the maximum aggregate flow on any edge.
-
-**Objective.** Maximum aggregate scaled flow value across all edges.
-
-### Instance format
-
-All instances share a single **`demand.txt`** file.  The instance is
-parameterised by the node count *n* alone (encoded in the solution filename,
-e.g. `network05.opt.sol` → n = 5).
-
-**`demand.txt`**:
-```
-src dst demand
-src dst demand
-...
-```
-
-Demands are integers scaled ×1000.
-
-### Solution format — Gurobi `.sol`
-
-```
-# Objective value = 12345.0
-z 12345.0
-x#1#2 1
-x#2#3 0
-...
-f#1#1#2 500
-f#1#2#3 500
-...
-```
-
-- `z` — objective value.
-- `x#i#j` — 1 if directed edge (i→j) is in the topology, 0 otherwise.
-- `f#k#i#j` — flow of commodity *k* on edge (i→j).
-
-### Checker CLI
-
-```
-check_network <n> <demand.txt> <solution.sol>
-```
-
-### Python types
-
-`NetworkInstance(n, demand, demand_path, name)`
-`NetworkSolution(objective, edges, flows, name, path)`
-
----
-
-## 09 — Capacitated Vehicle Routing (`routing`)
-
-**Problem.** Find minimum-cost routes from a single depot visiting all
-customers, each vehicle subject to a capacity constraint (CVRP).
-
-**Objective.** Total Euclidean route distance (rounded to nearest integer per
-edge).
-
-### Instance format — TSPLIB/CVRPLIB `.vrp`
-
-Standard TSPLIB format with sections `NODE_COORD_SECTION`,
-`DEMAND_SECTION`, and `DEPOT_SECTION`.  Key header fields:
-
-```
-NAME : E-n22-k4
-DIMENSION : 22
-CAPACITY : 6000
-```
-
-### Solution format
-
-```
-Route #1: 5 3 14 21 16
-Route #2: 11 2 18 9 12
-...
-Cost 375
-```
-
-- Each `Route #k:` line lists customer node IDs (1-based, depot excluded).
-- `Cost` is the total integer route cost.
-
-### Checker CLI
-
-```
-check_cvrp <instance.vrp> <solution.sol>
-```
-
-### Python types
-
-`CVRPInstance(name, n, capacity, coords, demands, depot, path)`
-`CVRPSolution(routes, claimed_cost, name, path)`
-
----
-
-## 10 — Order-Degree / Network Topology (`topology`)
-
-**Problem.** Find an undirected graph on exactly *n* nodes where every node
-has degree ≤ *d*, minimising the diameter.
-
-**Objective.** Actual graph diameter (lower is better).
-
-### Instance format
-
-There are **no separate instance files**.  The instance is defined by a triple
-*(n, degree, diameter)* encoded in the solution filename:
-
-```
-topology_<n>_<d>.opt.gph    ← best known optimal
-topology_<n>_<d>.bst.gph    ← best known heuristic
-```
-
-The diameter is read from a comment in the graph file header (see below).
-
-### Solution format — `.gph` (DIMACS, plain or gzip)
-
-```
-c Undirected Graph with Diameter 3
-p edge <node_count> <edge_count>
-e <node1> <node2>
-e <node1> <node2>
-...
-```
-
-Nodes are 1-based.  The `c` comment line declaring the diameter is required
-by the Rust checker.  Files may be gzip-compressed.
-
-### Checker CLI
-
-```
-check_topology <n> <degree> <diameter> <solution.gph>
-```
-
-### Python types
-
-`TopologyInstance(n, degree, diameter, name)`
-`TopologySolution(n, edges, diameter, degree, name, path)`
+- **Object**: `n`, `degree`, and `bounds` (lower and upper diameter bound from `instances/bounds.csv`, where listed).
+- **Solution**: the edges of the graph, as an m × 2 array or a list of `(u, v)`.
+- **Instance file** `instances/topology_<n>_<d>.dat`: the two numbers.
+- **Solution file** `solutions/topology_<n>_<d>.<opt|bst>.gph[.xz]`: DIMACS format as for IndependentSet.
+- **Objective**: the diameter. The graph must be connected with exactly n nodes and no degree above d; with `check(..., max_diameter=D)` a larger diameter is infeasible as well.
