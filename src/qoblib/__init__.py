@@ -11,6 +11,8 @@ object of such a class is one instance::
     problem = MarketSplit.load("ms_03_050_002")
     problem.check(problem.best_known.solution)
 """
+from importlib.metadata import version as _version
+
 from qoblib._base import BestKnown, CheckResult, Problem
 from qoblib.cli import download
 from qoblib._download import cache_dir
@@ -29,7 +31,7 @@ from qoblib.problems import (
     Topology,
 )
 
-__version__ = "0.2.0"
+__version__ = _version("qoblib")
 
 __all__ = [
     "PROBLEMS",

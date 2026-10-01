@@ -1,6 +1,6 @@
 """Regenerate src/qoblib/index.json from the QOBLIB repository.
 
-Usage: python tools/build_index.py [ref]    (ref defaults to "main")
+Usage: uv run tools/build_index.py [ref]    (ref defaults to "main")
 """
 import sys
 
